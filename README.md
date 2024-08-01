@@ -8,6 +8,6 @@ The radiosensitivity of cancer cells varies significantly between cancer types a
 
 ## Authors
 
-Mona Wang (wanrong.wang@mail.mcgill.ca)
-Supervisor: Dr. Laya Rafiee Sevyeri(laya.rafieesevyeri@mail.mcgill.ca)
+Mona Wang (wanrong.wang@mail.mcgill.ca) <br />
+Supervisor: Dr. Laya Rafiee Sevyeri(laya.rafieesevyeri@mail.mcgill.ca) <br />
 PI: Dr. Shirin A. Enger (shirin.enger@mcgill.ca)
