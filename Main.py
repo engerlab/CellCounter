@@ -10,6 +10,8 @@ from dataset import CellDataset, getLabels, getPaths
 from models import SimpleNet, UNet
 
 
+torch.cuda.empty_cache()
+
 # CUDA for PyTorch
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -17,10 +19,11 @@ torch.backends.cudnn.benchmark = True
 
 # Hyperparameters
 WHICHDATA = 'HCT116' #change
-EPOCHS = 5
+EPOCHS = 20
 LR = 0.001
 SIZE = (572, 572)
-hyperparams = {'batch_size': 1, #dependent on the image size <-- can resize 300 ish
+PATH = './model.pth' # path for saving model
+hyperparams = {'batch_size': 300, #dependent on the image size <-- can resize 300 ish
                'shuffle': False,
                'num_workers': 0}
 
@@ -118,7 +121,7 @@ def train_model(model, train_loader, test_loader):
             mask = torch.argmax(mask, dim=1)
             loss = loss_fn(logits.float(), mask.float())
             
-            print(loss)
+            print('loss', loss)
             loss.requires_grad_()
             loss.backward()
             optimizer.step()
@@ -146,10 +149,13 @@ def train_model(model, train_loader, test_loader):
         training_loss.append(epoch_training_loss.item())
         val_loss.append(epoch_val_loss.item())
 
+        print("val_loss_min", val_loss_min)
+
         # Saving model
         if val_loss_min is None or val_loss_min > epoch_training_loss:
             val_loss_min = epoch_training_loss
-            torch.save(model.state_dict())
+            print('val_loss_min is currently:', val_loss_min)
+            torch.save(model.state_dict(), PATH)
             print("Saved best model!")
 
 
