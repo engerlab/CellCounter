@@ -1,4 +1,5 @@
 import numpy as np
+import wandb
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -10,8 +11,6 @@ from dataset import CellDataset, getLabels, getPaths
 from models import SimpleNet, UNet
 
 
-torch.cuda.empty_cache()
-
 # CUDA for PyTorch
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -20,10 +19,11 @@ torch.backends.cudnn.benchmark = True
 # Hyperparameters
 WHICHDATA = 'HCT116' #change
 EPOCHS = 20
-LR = 0.001
+LR = 0.002
 SIZE = (572, 572)
-PATH = './model.pth' # path for saving model
-hyperparams = {'batch_size': 300, #dependent on the image size <-- can resize 300 ish
+BATCH = 16
+MODEL_PATH = './model.pth' # path for saving model
+hyperparams = {'batch_size': BATCH, #dependent on the image size <-- can resize 300 ish power of 2
                'shuffle': False,
                'num_workers': 0}
 
@@ -94,6 +94,19 @@ def train_model(model, train_loader, test_loader):
     Args:
         model (nn.Module): an imported NN model
     '''
+
+    # Initialize Logging
+    experiment = wandb.init(
+        project='Cell Count',
+        anonymous='must',
+        config={
+            'architecture': 'UNet',
+            'dataset': 'HCT116',
+            'learning_rate': LR,
+            'epochs': EPOCHS,
+            'batch_size': BATCH
+    })
+
     training_loss = []
     val_loss = []
     val_loss_min = np.Inf
@@ -101,7 +114,7 @@ def train_model(model, train_loader, test_loader):
     # specify loss function
     loss_fn = nn.BCEWithLogitsLoss() # NLLLoss() is another one
     # specify optimizer
-    optimizer = optim.Adam(model.parameters())
+    optimizer = optim.Adam(model.parameters(), lr=LR)
 
     for epoch in range(EPOCHS):
         print(f'Epoch {epoch+1} out of {EPOCHS} epochs')
@@ -110,37 +123,40 @@ def train_model(model, train_loader, test_loader):
         epoch_training_loss = []
         model.train()
         for batch, (img, mask) in enumerate(train_loader): # Obtain one batch of dataset
-            img = img.to(device)
-            mask = mask.to(device)
+            img, mask = img.to(device), mask.to(device)
 
-            # print(mask.shape)
-
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             logits = model(img)
             logits = torch.argmax(logits, dim=1)
             mask = torch.argmax(mask, dim=1)
             loss = loss_fn(logits.float(), mask.float())
-            
-            print('loss', loss)
-            loss.requires_grad_()
+
+            wandb.log({'loss': loss})
+            for name, param in model.named_parameters():
+                wandb.log({f'{name}'})
+
+            # print('loss', loss)
+            loss.requires_grad = True
             loss.backward()
             optimizer.step()
             epoch_training_loss.append(loss.item())
 
-            # pred = torch.softmax(logits, dim=1)
-            # pred = torch.argmax(pred, dim=1, keepdim=True).float()
-            # onehot_pred = nn.functional.onehot(pred, num_classes=2)
-            # onehot_mask = nn.functional.onehot(mask, num_classes=2)
+            # for name, param in model.named_parameters():
+            #     print(name, param.grad)
+
+
 
         # Validation Loop
         epoch_val_loss = []
         model.eval()
         for i, data in enumerate(test_loader):
-            img, mask = data
+            img = img.to(device)
+            mask = mask.to(device)
             
             with torch.no_grad():
                 logits = model(img)
-                loss = loss_fn(logits, mask)
+                logits = torch.argmax(logits, dim=1)
+                loss = loss_fn(logits.float(), mask.float())
                 epoch_val_loss.append(loss.item()) # extract loss value as a Python float
 
         # Logging epoch metrics
@@ -155,7 +171,7 @@ def train_model(model, train_loader, test_loader):
         if val_loss_min is None or val_loss_min > epoch_training_loss:
             val_loss_min = epoch_training_loss
             print('val_loss_min is currently:', val_loss_min)
-            torch.save(model.state_dict(), PATH)
+            torch.save(model.state_dict(), MODEL_PATH)
             print("Saved best model!")
 
 
