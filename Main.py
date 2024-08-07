@@ -1,5 +1,8 @@
-import numpy as np
+import os
 import wandb
+from tqdm import tqdm
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -19,18 +22,21 @@ torch.backends.cudnn.benchmark = True
 # Hyperparameters
 WHICHDATA = 'HCT116' #change
 EPOCHS = 20
-LR = 0.002
+LR = 0.001
 SIZE = (572, 572)
 BATCH = 16
-MODEL_PATH = './model.pth' # path for saving model
-hyperparams = {'batch_size': BATCH, #dependent on the image size <-- can resize 300 ish power of 2
+MODEL_PATH = './saved/saved_model.pth' # path for saving model
+hyperparams_train = {'batch_size': BATCH, #dependent on the image size <-- can resize 300 ish power of 2
+               'shuffle': True,
+               'num_workers': 0}
+hyperparams_test = {'batch_size': BATCH, #dependent on the image size <-- can resize 300 ish power of 2
                'shuffle': False,
                'num_workers': 0}
 
 # The transformation for img and masks of the dataset
 transform = nn.Sequential(
     transforms.Resize(SIZE), 
-    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)), # can change according to the dataset
     )
 mask_transform = nn.Sequential(
     transforms.Resize((452, 452)), 
@@ -81,9 +87,9 @@ def dataset_prep():
 
     # Generators
     train_data = CellDataset(samples['train'], masks['train'], transform, mask_transform)
-    train_loader = DataLoader(train_data, **hyperparams)
+    train_loader = DataLoader(train_data, batch_size=BATCH, shuffle=True, num_workers=0) # Contains 628 samples
     test_data = CellDataset(samples['test'], masks['test'], transform, mask_transform)
-    test_loader = DataLoader(test_data, **hyperparams)
+    test_loader = DataLoader(test_data, **hyperparams_test) # Contains 159 samples
 
     return train_loader, test_loader
 
@@ -96,6 +102,7 @@ def train_model(model, train_loader, test_loader):
     '''
 
     # Initialize Logging
+
     experiment = wandb.init(
         project='Cell Count',
         anonymous='must',
@@ -114,48 +121,43 @@ def train_model(model, train_loader, test_loader):
     # specify loss function
     loss_fn = nn.BCEWithLogitsLoss() # NLLLoss() is another one
     # specify optimizer
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+    optimizer = optim.AdamW(model.parameters(), lr=LR)
 
+    # 20 x 787 = 15740 steps
     for epoch in range(EPOCHS):
         print(f'Epoch {epoch+1} out of {EPOCHS} epochs')
 
         # Training Loop
         epoch_training_loss = []
         model.train()
-        for batch, (img, mask) in enumerate(train_loader): # Obtain one batch of dataset
-            img, mask = img.to(device), mask.to(device)
+        for batch in tqdm(train_loader, desc='Training'): # Obtain one batch of dataset
+            img, mask = batch[0].to(device), batch[1].to(device)
 
-            optimizer.zero_grad(set_to_none=True)
+            optimizer.zero_grad()
             logits = model(img)
             logits = torch.argmax(logits, dim=1)
             mask = torch.argmax(mask, dim=1)
             loss = loss_fn(logits.float(), mask.float())
-
-            wandb.log({'loss': loss})
-            for name, param in model.named_parameters():
-                wandb.log({f'{name}'})
 
             # print('loss', loss)
             loss.requires_grad = True
             loss.backward()
             optimizer.step()
             epoch_training_loss.append(loss.item())
-
-            # for name, param in model.named_parameters():
-            #     print(name, param.grad)
-
+            
+            wandb.log({'Loss vs. Step': loss})
 
 
         # Validation Loop
         epoch_val_loss = []
         model.eval()
-        for i, data in enumerate(test_loader):
-            img = img.to(device)
-            mask = mask.to(device)
+        for batch in tqdm(test_loader, desc='Validation'): # Obtain one batch of dataset
+            img, mask = batch[0].to(device), batch[1].to(device)
             
             with torch.no_grad():
                 logits = model(img)
                 logits = torch.argmax(logits, dim=1)
+                mask = torch.argmax(mask, dim=1)
                 loss = loss_fn(logits.float(), mask.float())
                 epoch_val_loss.append(loss.item()) # extract loss value as a Python float
 
@@ -165,14 +167,15 @@ def train_model(model, train_loader, test_loader):
         training_loss.append(epoch_training_loss.item())
         val_loss.append(epoch_val_loss.item())
 
-        print("val_loss_min", val_loss_min)
 
         # Saving model
-        if val_loss_min is None or val_loss_min > epoch_training_loss:
-            val_loss_min = epoch_training_loss
+        if val_loss_min is None or val_loss_min > epoch_val_loss:
+            val_loss_min = epoch_val_loss
             print('val_loss_min is currently:', val_loss_min)
             torch.save(model.state_dict(), MODEL_PATH)
             print("Saved best model!")
+
+        wandb.log({'Loss vs. Epoch': val_loss_min})
 
 
 if __name__ == '__main__':
