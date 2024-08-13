@@ -1,20 +1,12 @@
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 # Source: https://github.com/milesial/Pytorch-UNet/blob/master/unet/unet_model.py
 class UNet(nn.Module):
     def __init__(self, channels):
         super(UNet, self).__init__()
-        # self.down1 = DoubleConv(channels, 64)
-        # self.down2 = DownSample(64, 128)
-        # self.down3 = DownSample(128, 256)
-        # self.down4 = DownSample(256, 512)
-        # self.down5 = DownSample(512, 1024, single_conv=True)
-        # self.up1 = UpSample(1024, 512)
-        # self.up2 = UpSample(512, 256)
-        # self.up3 = UpSample(256, 128)
-        # self.up4 = UpSample(128, 64)
-        # self.finish = nn.Conv2d(64, 2, (1, 1))
 
         self.model = nn.Sequential(
             DoubleConv(channels, 64),
@@ -26,32 +18,11 @@ class UNet(nn.Module):
             UpSample(512, 256),
             UpSample(256, 128),
             UpSample(128, 64),
-            nn.Conv2d(64, 2, (1, 1))
+            nn.Conv2d(64, 1, (1, 1))
         )
     
     def forward(self, x):
         return self.model(x)
-        # x = self.down1(x)
-        # print(x.shape)
-        # x = self.down2(x)
-        # print(x.shape) 
-        # x = self.down3(x)
-        # print(x.shape)
-        # x = self.down4(x)
-        # print(x.shape)
-        # x = self.down5(x)
-        # print(x.shape)
-        # x = self.up1(x)
-        # print(x.shape)
-        # x = self.up2(x)
-        # print(x.shape)
-        # x = self.up3(x)
-        # print(x.shape)
-        # x = self.up4(x)
-        # print(x.shape)
-        # x = self.finish(x)
-        # print(x.shape)
-        # return x
 
 
 
@@ -134,3 +105,55 @@ class SimpleNet(nn.Module):
         x = self.linearLayers(x)
 
         return x
+
+
+def check_accuracy(loader, model, device=None):
+    '''
+    Give the accuracy of the model based on pixel to pixel comparison
+    Save the pred images
+    Args:
+        loader(torch.utils.data.DataLoader): the dataloader of the data, initialized)
+        model (nn.Module): an imported NN model
+        device(torch.device): the host device
+    Return:
+        The accuracy of the model across all of the dataset imported by the loader
+    '''
+    counter=0
+    num_batches=0
+    accuracy = []
+
+    with torch.no_grad():
+        for batch in tqdm(loader, desc='Testing'):
+            img, mask = batch[0].to(device), batch[1].to(device)
+            mask = torch.round(mask, decimals=0)
+            
+            logits = model(img)
+            prob = torch.sigmoid(logits)
+            pred = torch.round(prob, decimals=0)
+            # for i in range(0, 452):
+            #     for j in range(0, 452):
+            #         print("mask", mask[0][0][i][j])
+            #         print("pred", pred[0][0][i][j])
+            correct = (pred == mask).sum() # the total pixels that are correct
+            pixels = pred.size(0) * 452 * 452
+            accuracy.append(correct / pixels)
+
+            fig, axes = plt.subplots(16, 3, figsize=(15, 30))
+            for i, (img, mask, pred) in enumerate(zip(img, mask, pred)):
+                axes[i, 0].imshow(img[0].detach().cpu(), cmap='gray')
+                axes[i, 0].set_title('Image')
+                # axes[i, 1].imshow(img[0].detach().cpu(), cmap='gray')
+                axes[i, 1].imshow(mask[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
+                axes[i, 1].set_title('Ground truth segmentation')
+                # axes[i, 2].imshow(img[0].detach().cpu(), cmap='gray')
+                axes[i, 2].imshow(pred[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
+                axes[i, 2].set_title('Predicted segmentation')
+            
+            # Saving the output
+            fig.savefig("./preds/prediction" + str(counter) + ".png")
+            counter+=1
+
+            num_batches+=1
+    
+    total_accuracy = sum(accuracy) / num_batches * 100
+    return total_accuracy
