@@ -1,31 +1,41 @@
+## Utilities
 import os
 import wandb
+import time
+from datetime import timedelta
 from tqdm import tqdm
 
+## Image Processing
 import numpy as np
+import monai as mn
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torchvision.transforms.v2 as transforms
 from torch.utils.data import DataLoader
-from torchvision import transforms
-
 from sklearn.model_selection import ShuffleSplit
+
+## Custom Python files
 from dataset import CellDataset, getLabels, getPaths
-from models import SimpleNet, UNet
+from models import SimpleNet, UNet, check_accuracy
 
 
 # CUDA for PyTorch
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
+print(type(device))
 torch.backends.cudnn.benchmark = True
 
 # Hyperparameters
 WHICHDATA = 'HCT116' #change
-EPOCHS = 20
-LR = 0.001
-SIZE = (572, 572)
+EPOCHS = 30
+LR = 5e-4
 BATCH = 16
+SIZE = (572, 572)
 MODEL_PATH = './saved/saved_model.pth' # path for saving model
+
+# Hyperparameters
 hyperparams_train = {'batch_size': BATCH, #dependent on the image size <-- can resize 300 ish power of 2
                'shuffle': True,
                'num_workers': 0}
@@ -34,23 +44,39 @@ hyperparams_test = {'batch_size': BATCH, #dependent on the image size <-- can re
                'num_workers': 0}
 
 # The transformation for img and masks of the dataset
-transform = nn.Sequential(
-    transforms.Resize(SIZE), 
+train_transform = transforms.Compose([
+    # transforms.RandomHorizontalFlip(),
+    # transforms.RandomRotation(30),
+    # transforms.RandomZoomOut(side_range=(1.0, 4.0), p=0.3),
+    transforms.Resize(SIZE),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # can change according to the dataset
+    ])
+test_transform = transforms.Compose([
+    transforms.Resize(SIZE),
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)), # can change according to the dataset
-    )
-mask_transform = nn.Sequential(
-    transforms.Resize((452, 452)), 
-    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    transforms.Grayscale()
-    )
+    ])
+
+
+# Initialize Logging
+experiment = wandb.init(
+        project='Cell Count',
+        anonymous='must',
+        config={
+            'architecture': 'UNet',
+            'dataset': 'HCT116',
+            'learning_rate': LR,
+            'epochs': EPOCHS,
+            'batch_size': BATCH
+    })
 
 
 def dataset_prep():
     '''
     Train test splitting a dataset and creating data loaders
-    Return:
+    Returns:
         train_loader (torch.utils.data.dataloader): DataLoader for training dataset
-        test_loader (torch.utils.data.dataloader): DataLoaderfor testing dataset
+        val_loader (torch.utils.data.dataloader): DataLoader for validation dataset
+        test_loader (torch.utils.data.dataloader): DataLoader for testing dataset
     '''
 
     # Loading custom dataset: https://stackoverflow.com/questions/51577282/how-do-i-load-custom-image-based-datasets-into-pytorch-for-use-with-a-cnn
@@ -63,57 +89,84 @@ def dataset_prep():
     y = getLabels(WHICHDATA)
     samples = {}
     masks = {}
-    # labels = {}
+    train_indices = []
 
-    skf = ShuffleSplit(n_splits = 1, train_size=0.8, test_size=0.2)
-    for fold, (train_idx, test_idx) in enumerate(skf.split(X, y)):
-        train_data = []
+
+    ss = ShuffleSplit(n_splits = 1, train_size=0.8, test_size=0.2)
+    for train_idx, test_idx in ss.split(X):
         test_data = []
-        train_masks = []
         test_masks = []
-
-        for tridx in train_idx:
-            train_data.append(img_list[tridx])
-            train_masks.append(mask_list[tridx])
-        for teidx in test_idx:
+        for teidx in test_idx: # Adding testing data into temporary lists
             test_data.append(img_list[teidx])
             test_masks.append(mask_list[teidx])
 
-        samples['train'] = train_data
+        # Adding test set to dictionaries
+        train_indices = train_idx
         samples['test'] = test_data
-        masks['train'] = train_masks
         masks['test'] = test_masks
+        
 
+    for train_idx, val_idx in ss.split(train_indices): # 80 20 split for training and validation dataset
+        train_data = []
+        val_data = []
+        train_masks = []
+        val_masks = []
+        for tridx in train_idx: # Adding training data into temporary lists
+            train_data.append(img_list[tridx])
+            train_masks.append(mask_list[tridx])
+        for validx in val_idx: # Adding validation data into temporary lists
+            val_data.append(img_list[validx])
+            val_masks.append(mask_list[validx])
+
+        # Adding training and validation sets to dictionaries
+        samples['train'] = train_data
+        samples['validation'] = val_data
+        masks['train'] = train_masks
+        masks['validation'] = val_masks
+        
 
     # Generators
-    train_data = CellDataset(samples['train'], masks['train'], transform, mask_transform)
-    train_loader = DataLoader(train_data, batch_size=BATCH, shuffle=True, num_workers=0) # Contains 628 samples
-    test_data = CellDataset(samples['test'], masks['test'], transform, mask_transform)
-    test_loader = DataLoader(test_data, **hyperparams_test) # Contains 159 samples
+    train_data = CellDataset(samples['train'], masks['train'], train_transform)
+    train_loader = DataLoader(train_data, batch_size=BATCH, shuffle=True, num_workers=0) # Contains 503 samples
+    val_data = CellDataset(samples['validation'], masks['validation'], test_transform)
+    val_loader = DataLoader(val_data, batch_size=BATCH, shuffle=True, num_workers=0) # Contains 126 samples
+    test_data = CellDataset(samples['test'], masks['test'], test_transform)
+    test_loader = DataLoader(test_data, **hyperparams_test) # Contains 158 samples
 
-    return train_loader, test_loader
+
+    return train_loader, val_loader, test_loader
 
 
-def train_model(model, train_loader, test_loader):
+def one_hot(target):
+    '''
+    Convert an image to one hot format
+    Arg:
+        targets (torch.Tensor): an image in tensor format
+    Return:
+        one_hot (torch.Tensor): tensor of shape of target that is in one-hot format
+    '''  
+    target_extend=target.clone().to(torch.int64)
+    one_hot = torch.cuda.FloatTensor(target_extend.size(0), 2, target_extend.size(2), target_extend.size(3)).zero_()
+    one_hot.scatter_(1, target_extend, 1) 
+    return one_hot
+
+
+def train_model(model, train_loader, val_loader):
     '''
     Training a model on the dataset
     Args:
         model (nn.Module): an imported NN model
+        train_loader (torch.utils.data.DataLoader): the dataloader of the training data, initialized
+        val_loader (torch.utils.data.DataLoader): the dataloader of the validation data, initialized
     '''
 
-    # Initialize Logging
+    # Counters
+    train_steps=0
+    val_steps=0
+    epoch_num=0
+    count=0
 
-    experiment = wandb.init(
-        project='Cell Count',
-        anonymous='must',
-        config={
-            'architecture': 'UNet',
-            'dataset': 'HCT116',
-            'learning_rate': LR,
-            'epochs': EPOCHS,
-            'batch_size': BATCH
-    })
-
+    # Keep track of the loss
     training_loss = []
     val_loss = []
     val_loss_min = np.Inf
@@ -123,6 +176,7 @@ def train_model(model, train_loader, test_loader):
     # specify optimizer
     optimizer = optim.AdamW(model.parameters(), lr=LR)
 
+    epochnum=1#########
     # 20 x 787 = 15740 steps
     for epoch in range(EPOCHS):
         print(f'Epoch {epoch+1} out of {EPOCHS} epochs')
@@ -132,34 +186,57 @@ def train_model(model, train_loader, test_loader):
         model.train()
         for batch in tqdm(train_loader, desc='Training'): # Obtain one batch of dataset
             img, mask = batch[0].to(device), batch[1].to(device)
+            mask = torch.round(mask, decimals=0)
+            # mask = one_hot(mask).to(device)
 
             optimizer.zero_grad()
             logits = model(img)
-            logits = torch.argmax(logits, dim=1)
-            mask = torch.argmax(mask, dim=1)
+            # print(logits[0, :, :, :])
             loss = loss_fn(logits.float(), mask.float())
 
-            # print('loss', loss)
-            loss.requires_grad = True
             loss.backward()
             optimizer.step()
-            epoch_training_loss.append(loss.item())
+            epoch_training_loss.append(loss.item()) # total loss per batch
             
+            train_steps+=1
             wandb.log({'Loss vs. Step': loss})
 
 
         # Validation Loop
         epoch_val_loss = []
         model.eval()
-        for batch in tqdm(test_loader, desc='Validation'): # Obtain one batch of dataset
+        counter=0
+        for batch in tqdm(val_loader, desc='Validation'): # Obtain one batch of dataset
             img, mask = batch[0].to(device), batch[1].to(device)
-            
+            mask = torch.round(mask, decimals=0)
+            # mask = one_hot(mask).to(device)
+
             with torch.no_grad():
                 logits = model(img)
-                logits = torch.argmax(logits, dim=1)
-                mask = torch.argmax(mask, dim=1)
                 loss = loss_fn(logits.float(), mask.float())
                 epoch_val_loss.append(loss.item()) # extract loss value as a Python float
+
+                pred = torch.sigmoid(logits)
+                pred = torch.round(pred, decimals=0)
+                
+                fig, axes = plt.subplots(16, 3, figsize=(15, 30))
+                for i, (img, mask, pred) in enumerate(zip(img, mask, pred)):
+                    axes[i, 0].imshow(img[0].detach().cpu(), cmap='gray')
+                    axes[i, 0].set_title('Image')
+                    # axes[i, 1].imshow(img[0].detach().cpu(), cmap='gray')
+                    axes[i, 1].imshow(mask[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
+                    axes[i, 1].set_title('Ground truth segmentation')
+                    # axes[i, 2].imshow(img[0].detach().cpu(), cmap='gray')
+                    axes[i, 2].imshow(pred[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
+                    axes[i, 2].set_title('Predicted segmentation')
+                
+                # Saving the output
+                fig.savefig("./deletepls/prediction" + str(epochnum) +str(counter) + ".png")
+                counter+=1
+
+            val_steps+=1
+        epochnum+=1
+
 
         # Logging epoch metrics
         epoch_training_loss = torch.mean(torch.tensor(epoch_training_loss))
@@ -167,6 +244,8 @@ def train_model(model, train_loader, test_loader):
         training_loss.append(epoch_training_loss.item())
         val_loss.append(epoch_val_loss.item())
 
+        wandb.log({"Training Loss vs. Epoch": epoch_training_loss})
+        epoch_num+=1
 
         # Saving model
         if val_loss_min is None or val_loss_min > epoch_val_loss:
@@ -175,10 +254,70 @@ def train_model(model, train_loader, test_loader):
             torch.save(model.state_dict(), MODEL_PATH)
             print("Saved best model!")
 
-        wandb.log({'Loss vs. Epoch': val_loss_min})
+        wandb.log({'Validation Loss vs. Epoch': val_loss_min})
+    
+    #     print("Steps in Train per epoch:", train_steps) # 40
+    #     print("Steps in Validation per epoch:", val_steps) # 10
+    # print("Actual num of epochs:", epoch_num) #20
 
+
+def testing_model(test_loader):
+    '''
+    Testing the pre-trained model on the testing dataset
+    Args:
+        test_loader (torch.utils.data.DataLoader): the dataloader of the testing data, initialized
+    '''
+    counter=0
+
+    model = UNet(channels=3)
+    model.load_state_dict(torch.load(MODEL_PATH))
+    model = model.to(device)
+    model.eval()
+
+    accuracy = check_accuracy(test_loader, model, device=device)
+    # with torch.no_grad():
+    #     for batch in tqdm(test_loader, desc='Testing'): # Obtain one batch of dataset
+    #         img, mask = batch[0].to(device), batch[1].to(device)
+    #         # transforms.functional.resize(img, (452, 452)) #############
+
+    #         logits = model(img)
+    #         pred = torch.sigmoid(logits)
+    #         pred = torch.round(pred, decimals=0)
+            
+    #         fig, axes = plt.subplots(16, 3, figsize=(15, 30))
+    #         for i, (img, mask, pred) in enumerate(zip(img, mask, pred)):
+    #             axes[i, 0].imshow(img[0].detach().cpu(), cmap='gray')
+    #             axes[i, 0].set_title('Image')
+    #             # axes[i, 1].imshow(img[0].detach().cpu(), cmap='gray')
+    #             axes[i, 1].imshow(mask[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
+    #             axes[i, 1].set_title('Ground truth segmentation')
+    #             # axes[i, 2].imshow(img[0].detach().cpu(), cmap='gray')
+    #             axes[i, 2].imshow(pred[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
+    #             axes[i, 2].set_title('Predicted segmentation')
+            
+    #         # Saving the output
+    #         fig.savefig("./preds/prediction" + str(counter) + ".png")
+    #         counter+=1
+
+    print(f"The accuracy of the testing dataset is {accuracy}%")
+    print("\nTesting has finished, please find the results in ./preds")
+            
 
 if __name__ == '__main__':
-    train_loader, test_loader = dataset_prep() 
+    start = time.time()
+    # Send email alert when job begins
+    experiment.alert(
+        title='Main.py Has Begun Running',
+        text='Start')
+
+    train_loader, val_loader, test_loader = dataset_prep()
     model = UNet(channels=3).to(device)
-    train_model(model, train_loader, test_loader)
+    train_model(model, train_loader, val_loader)
+    testing_model(test_loader)
+
+    end = time.time()
+    elapsed_time = str(timedelta(seconds=(end-start)))
+    # Send email alert when job finishes
+    experiment.alert(
+        title='Main.py Has Finished Running',
+        text=f'Runtime: {elapsed_time}')
