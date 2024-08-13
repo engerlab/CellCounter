@@ -1,18 +1,20 @@
 import glob
 import os
 import re
+import numpy as np
+import monai as mn
+import torch
 from torch.utils.data import Dataset
 from torchvision.io import read_image
 from torchvision import transforms
 from PIL import Image
 
-
+MASK_SIZE = (452, 452)
 class CellDataset(Dataset):
-    def __init__(self, img, mask, img_transform, mask_transform): # initialize object
+    def __init__(self, img, mask, transform): # initialize object
         self.img = img
         self.mask = mask
-        self.img_transform = img_transform
-        self.mask_transform = mask_transform
+        self.transform = transform
         if len(img) != len(mask):
             raise ValueError("Number of images and masks do not match")
 
@@ -25,13 +27,15 @@ class CellDataset(Dataset):
 
         # Load data and get corresponding mask
         ToTensor = transforms.ToTensor()
-        X = ToTensor(Image.open(sample_name))
+        Resize = transforms.Resize(MASK_SIZE)
+        Grayscale = transforms.Grayscale()
+        X = ToTensor(Image.open(sample_name)) # Already normalized to [0, 1]
         y = ToTensor(Image.open(mask_name))
 
-        if self.img_transform:
-            X = self.img_transform(X)
-        if self.mask_transform:
-            y = self.mask_transform(y)
+        if self.transform:
+            y = Resize(y)
+            y = Grayscale(y)
+            X, y = self.transform(X, y)
 
         return X, y # img and mask
 
@@ -53,7 +57,7 @@ def getPaths(dataset, img_or_mask):
         img_dir (list): list with the name of each sample
     """
     if dataset == 'HCT116':
-        folder_dir = os.path.join(os.environ['HOMEPATH'], 'Desktop', 'Projects', 'Summer_2024', 'Project', 'Data', 'HCT116_Dataset', img_or_mask)
+        folder_dir = os.path.join('..', 'Data', 'HCT116_Dataset', img_or_mask)
         img_dir = sorted(glob.glob(os.path.join(folder_dir, '*.jpg')), key=numericalSort)
         return folder_dir, img_dir
 
