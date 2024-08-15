@@ -18,19 +18,14 @@ from sklearn.model_selection import ShuffleSplit
 
 ## Custom Python files
 from dataset import CellDataset, getLabels, getPaths
-from models import SimpleNet, UNet, check_accuracy
-
-
-# CUDA for PyTorch
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
-print(type(device))
-torch.backends.cudnn.benchmark = True
+from models import SimpleNet, UNet
+from evaluation import validation, check_accuracy
+from dice import dice_coeff, dice_loss
 
 # Hyperparameters
+lr = 5e-4
 WHICHDATA = 'HCT116' #change
 EPOCHS = 30
-LR = 5e-4
 BATCH = 16
 SIZE = (572, 572)
 MODEL_PATH = './saved/saved_model.pth' # path for saving model
@@ -64,7 +59,7 @@ experiment = wandb.init(
         config={
             'architecture': 'UNet',
             'dataset': 'HCT116',
-            'learning_rate': LR,
+            'learning_rate': lr,
             'epochs': EPOCHS,
             'batch_size': BATCH
     })
@@ -174,9 +169,10 @@ def train_model(model, train_loader, val_loader):
     # specify loss function
     loss_fn = nn.BCEWithLogitsLoss() # NLLLoss() is another one
     # specify optimizer
-    optimizer = optim.AdamW(model.parameters(), lr=LR)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+    # specify learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=3)  # goal: maximize Dice score
 
-    epochnum=1#########
     # 20 x 787 = 15740 steps
     for epoch in range(EPOCHS):
         print(f'Epoch {epoch+1} out of {EPOCHS} epochs')
@@ -193,6 +189,7 @@ def train_model(model, train_loader, val_loader):
             logits = model(img)
             # print(logits[0, :, :, :])
             loss = loss_fn(logits.float(), mask.float())
+            loss += dice_loss(torch.sigmoid(logits.float()), mask.float(), multiclass=False)
 
             loss.backward()
             optimizer.step()
@@ -201,51 +198,15 @@ def train_model(model, train_loader, val_loader):
             train_steps+=1
             wandb.log({'Loss vs. Step': loss})
 
-
         # Validation Loop
-        epoch_val_loss = []
-        model.eval()
-        counter=0
-        for batch in tqdm(val_loader, desc='Validation'): # Obtain one batch of dataset
-            img, mask = batch[0].to(device), batch[1].to(device)
-            mask = torch.round(mask, decimals=0)
-            # mask = one_hot(mask).to(device)
-
-            with torch.no_grad():
-                logits = model(img)
-                loss = loss_fn(logits.float(), mask.float())
-                epoch_val_loss.append(loss.item()) # extract loss value as a Python float
-
-                pred = torch.sigmoid(logits)
-                pred = torch.round(pred, decimals=0)
-                
-                fig, axes = plt.subplots(16, 3, figsize=(15, 30))
-                for i, (img, mask, pred) in enumerate(zip(img, mask, pred)):
-                    axes[i, 0].imshow(img[0].detach().cpu(), cmap='gray')
-                    axes[i, 0].set_title('Image')
-                    # axes[i, 1].imshow(img[0].detach().cpu(), cmap='gray')
-                    axes[i, 1].imshow(mask[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
-                    axes[i, 1].set_title('Ground truth segmentation')
-                    # axes[i, 2].imshow(img[0].detach().cpu(), cmap='gray')
-                    axes[i, 2].imshow(pred[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
-                    axes[i, 2].set_title('Predicted segmentation')
-                
-                # Saving the output
-                fig.savefig("./deletepls/prediction" + str(epochnum) +str(counter) + ".png")
-                counter+=1
-
-            val_steps+=1
-        epochnum+=1
-
+        val_dice_score, epoch_val_loss = validation(val_loader, loss_fn, model, device, epoch_num)
+        scheduler.step(val_dice_score)
 
         # Logging epoch metrics
         epoch_training_loss = torch.mean(torch.tensor(epoch_training_loss))
         epoch_val_loss = torch.mean(torch.tensor(epoch_val_loss))
         training_loss.append(epoch_training_loss.item())
         val_loss.append(epoch_val_loss.item())
-
-        wandb.log({"Training Loss vs. Epoch": epoch_training_loss})
-        epoch_num+=1
 
         # Saving model
         if val_loss_min is None or val_loss_min > epoch_val_loss:
@@ -255,7 +216,9 @@ def train_model(model, train_loader, val_loader):
             print("Saved best model!")
 
         wandb.log({'Validation Loss vs. Epoch': val_loss_min})
-    
+        wandb.log({"Training Loss vs. Epoch": epoch_training_loss})
+        wandb.log({"Dice Score vs. Epoch": val_dice_score}) # Should be maximized
+        epoch_num+=1
     #     print("Steps in Train per epoch:", train_steps) # 40
     #     print("Steps in Validation per epoch:", val_steps) # 10
     # print("Actual num of epochs:", epoch_num) #20
@@ -275,29 +238,6 @@ def testing_model(test_loader):
     model.eval()
 
     accuracy = check_accuracy(test_loader, model, device=device)
-    # with torch.no_grad():
-    #     for batch in tqdm(test_loader, desc='Testing'): # Obtain one batch of dataset
-    #         img, mask = batch[0].to(device), batch[1].to(device)
-    #         # transforms.functional.resize(img, (452, 452)) #############
-
-    #         logits = model(img)
-    #         pred = torch.sigmoid(logits)
-    #         pred = torch.round(pred, decimals=0)
-            
-    #         fig, axes = plt.subplots(16, 3, figsize=(15, 30))
-    #         for i, (img, mask, pred) in enumerate(zip(img, mask, pred)):
-    #             axes[i, 0].imshow(img[0].detach().cpu(), cmap='gray')
-    #             axes[i, 0].set_title('Image')
-    #             # axes[i, 1].imshow(img[0].detach().cpu(), cmap='gray')
-    #             axes[i, 1].imshow(mask[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
-    #             axes[i, 1].set_title('Ground truth segmentation')
-    #             # axes[i, 2].imshow(img[0].detach().cpu(), cmap='gray')
-    #             axes[i, 2].imshow(pred[0].detach().cpu(), cmap='gray', vmin=0, vmax=1, interpolation='nearest', alpha=0.5)
-    #             axes[i, 2].set_title('Predicted segmentation')
-            
-    #         # Saving the output
-    #         fig.savefig("./preds/prediction" + str(counter) + ".png")
-    #         counter+=1
 
     print(f"The accuracy of the testing dataset is {accuracy}%")
     print("\nTesting has finished, please find the results in ./preds")
@@ -310,6 +250,12 @@ if __name__ == '__main__':
         title='Main.py Has Begun Running',
         text='Start')
 
+    # CUDA for PyTorch
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda:0" if use_cuda else "cpu")
+    torch.backends.cudnn.benchmark = True
+
+    # Main section
     train_loader, val_loader, test_loader = dataset_prep()
     model = UNet(channels=3).to(device)
     train_model(model, train_loader, val_loader)
