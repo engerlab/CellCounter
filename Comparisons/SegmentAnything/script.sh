@@ -28,6 +28,9 @@ cd $REQUIREMENTS
 pip install --no-index --upgrade pip
 pip install --no-index --no-cache -r requirements.txt
 
+echo '----------------------'
+echo 'Installation complete!'
+echo '----------------------'
 
 cd $SCRIPT
 python3 segmentAnything.py
