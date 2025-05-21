@@ -5,7 +5,7 @@
 #SBATCH --mem=40G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1 # <- num of gpus per node
-#SBATCH --time=2:00:0
+#SBATCH --time=5:00:0
 #SBATCH --mail-user=<monawcompute@outlook.com
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:a100:1 # <- needs to be the same as ntasks-per-node
@@ -15,6 +15,7 @@ REQUIREMENTS="/home/wangw/projects/def-senger/wangw/AI_Cell_Counting/Comparisons
 
 module load StdEnv/2023
 module load python/3.11
+module load opencv/4.11.0
 module load scipy-stack
 module load httpproxy
 
