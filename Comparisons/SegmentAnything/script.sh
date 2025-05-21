@@ -23,9 +23,11 @@ virtualenv -p python $HOME/cellvenv
 source cellvenv/bin/activate
 
 echo 'Installing dependencies...'
+pip install git+https://github.com/facebookresearch/segment-anything.git
+cd $REQUIREMENTS
 pip install --no-index --upgrade pip
 pip install --no-index --no-cache -r requirements.txt
-pip install git+https://github.com/facebookresearch/segment-anything.git
+
 
 cd $SCRIPT
 python3 segmentAnything.py
