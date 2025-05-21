@@ -10,7 +10,8 @@
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:a100:1 # <- needs to be the same as ntasks-per-node
 
-SCRIPT="/home/wangw/projects/def-senger/wangw/"
+SCRIPT="/home/wangw/projects/def-senger/wangw/AI_Cell_Counting/Comparisons/SegmentAnything"
+REQUIREMENTS="/home/wangw/projects/def-senger/wangw/AI_Cell_Counting/Comparisons"
 
 module load StdEnv/2023
 module load python/3.11
@@ -22,6 +23,8 @@ virtualenv -p python $HOME/cellvenv
 source cellvenv/bin/activate
 
 echo 'Installing dependencies...'
+pip install --no-index --upgrade pip
+pip install --no-index --no-cache -r requirements.txt
 pip install git+https://github.com/facebookresearch/segment-anything.git
 
 cd $SCRIPT
