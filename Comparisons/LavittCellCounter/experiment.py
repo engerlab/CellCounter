@@ -45,7 +45,7 @@ def run(args):
     folder = args.data_folder
     trainset = glob.glob(os.path.join(folder, '*.jpg'))
     train_x, train_y = load_images(trainset[:630])
-    test_x, test_y = load_images(trainset[-495:])
+    test_x, test_y = load_images(trainset[630:])
 
     #extract features
     print('Extracting features...')
