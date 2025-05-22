@@ -23,8 +23,8 @@ def show_anns(anns):
         img[m] = color_mask
     ax.imshow(img)
 
-images = os.listdir(os.path.join('.', 'img'))
-img_path = os.path.join('.', 'img')
+images = os.listdir(os.path.join('..', 'img'))
+img_path = os.path.join('..', 'img')
 out_path = os.path.join('.', 'output_b')
 checkpoint_path = os.path.join('.', 'sam_vit_b_01ec64.pth')
 
