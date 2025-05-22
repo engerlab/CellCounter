@@ -1,0 +1,25 @@
+# Computation
+urllib3==2.1.0
+einops==0.8.0
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.5.0
+scikit-image==0.25.1
+torch==2.3.0
+torchvision==0.18.0
+monai==1.4.0
+
+# Data
+pandas==2.2.1
+pillow==11.1.0
+
+# Visualizations
+matplotlib==3.9.0
+seaborn==0.13.2
+
+# Others
+tqdm==4.66.4
+comet-ml==3.47.1
+
+
+xgboost~=1.0.2
