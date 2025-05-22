@@ -56,7 +56,7 @@ def load_images(folder):
     folder = sorted(folder, key=numericalSort)
     images = []
     for i in tqdm(folder):
-        images.append(np.array(Image.open(i), dtype='float16'))
+        images.append(np.array(Image.open(i).resize((700, 700)), dtype='float16'))
     # images = np.array([np.array(Image.open(i), dtype='float32') for i in tqdm(folder)])
     labels = np.array(ground_truth)
     return images, labels
