@@ -5,7 +5,7 @@
 #SBATCH --mem=40G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1 # <- num of gpus per node
-#SBATCH --time=5:00:0
+#SBATCH --time=2-0:00:0
 #SBATCH --mail-user=<monawcompute@outlook.com
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:a100:1 # <- needs to be the same as ntasks-per-node
@@ -31,4 +31,4 @@ echo '----------------------'
 echo 'Installation complete!'
 echo '----------------------'
 
-python experiment.py --data_folder $DATA
+python experiment.py --data_folder $DATA 
