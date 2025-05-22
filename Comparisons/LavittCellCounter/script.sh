@@ -31,4 +31,5 @@ echo '----------------------'
 echo 'Installation complete!'
 echo '----------------------'
 
-python experiment.py --data_folder $DATA 
+python experiment.py --data_folder $DATA
+# python cnn_experiment.py --pretrained --load_model_from_paper --data_folder $DATA --models_folder $SCRIPT
