@@ -1,3 +1,4 @@
+# https://github.com/falkolav/cell-counter/tree/master
 import argparse
 import glob
 import os
@@ -65,7 +66,7 @@ def run(args):
 
     #run models
     print('Conducting experiments')
-    regressor = MLRegressor()
+    regressor = MLRegressor(train_x=train_x, train_y=train_y, test_x=test_x, test_y=test_y)
     regressor.run_all_tests()
 
 
