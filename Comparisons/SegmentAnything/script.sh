@@ -11,7 +11,6 @@
 #SBATCH --gres=gpu:a100:1 # <- needs to be the same as ntasks-per-node
 
 SCRIPT="/home/wangw/projects/def-senger/wangw/AI_Cell_Counting/Comparisons/SegmentAnything"
-REQUIREMENTS="/home/wangw/projects/def-senger/wangw/AI_Cell_Counting/Comparisons"
 
 module load StdEnv/2023
 module load python/3.11
@@ -25,7 +24,7 @@ source cellvenv/bin/activate
 
 echo 'Installing dependencies...'
 pip install git+https://github.com/facebookresearch/segment-anything.git
-cd $REQUIREMENTS
+cd $SCRIPT
 pip install --no-index --upgrade pip
 pip install --no-index --no-cache -r requirements.txt
 
@@ -33,5 +32,4 @@ echo '----------------------'
 echo 'Installation complete!'
 echo '----------------------'
 
-cd $SCRIPT
 python3 segmentAnything.py
