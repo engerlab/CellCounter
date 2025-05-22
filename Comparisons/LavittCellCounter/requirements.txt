@@ -21,5 +21,5 @@ seaborn==0.13.2
 tqdm==4.66.4
 comet-ml==3.47.1
 
-
+fastai==2.7.18
 xgboost~=1.0.2
