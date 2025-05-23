@@ -89,7 +89,7 @@ class MLRegressor():
         model = 'GTB'
 
         regr = GradientBoostingRegressor(n_estimators=50, learning_rate=0.1, max_depth=1, random_state=0,
-                                         loss='ls')
+                                         loss='squared_error')
         regr.fit(self.train_x, self.train_y)
         predict = regr.predict(self.test_x)
         self.results.loc['prediction', model] = predict
