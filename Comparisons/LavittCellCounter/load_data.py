@@ -52,11 +52,14 @@ def numericalSort(value):
     return parts
 
 
-def load_images(folder):
+def load_images(folder, train_or_test):
     folder = sorted(folder, key=numericalSort)
     images = []
     for i in tqdm(folder):
         images.append(np.array(Image.open(i).resize((700, 700)), dtype='float16'))
     # images = np.array([np.array(Image.open(i), dtype='float32') for i in tqdm(folder)])
-    labels = np.array(ground_truth)
+    if train_or_test == 'train':
+        labels = np.array(ground_truth[:630])
+    else:
+        labels = np.array(ground_truth[630:])
     return images, labels
