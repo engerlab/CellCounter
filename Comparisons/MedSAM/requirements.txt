@@ -1,0 +1,15 @@
+# Computation
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.5.0
+scikit-image==0.25.1
+torch==2.3.0
+torchvision==0.18.0
+
+# Data
+
+# Visualizations
+matplotlib==3.9.0
+
+# Others
+tqdm==4.66.4
