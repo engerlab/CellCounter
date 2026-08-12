@@ -1,13 +1,23 @@
-# Artificial Intelligence-Based Cell Survival Colony Counting
+# Automated Colony Counting for Clonogenic Cell Survival Assays
 
-To facilitate the workflow in counting viable colonies in Clonogenic assays
+Data can be made available upon request.
 
-## Description
+## Abstract
 
-The radiosensitivity of cancer cells varies significantly between cancer types and individual patients. Assessing the radiosensitivity of a given cancer cell type is crucial for understanding the effectiveness of radiotherapy. The clonogenic assay is a cell biology technique that quantifies viable cell colonies, defined as clusters containing 50 or more cells, after administering radiation dose, and it is considered the gold standard for measuring radiosensitivity. However, the technique is currently performed manually and thus is time-consuming and prone to interobserver variability. The use of computational methods such as segmentation and artificial intelligence can effectively eliminate these issues.
+**Background and Objective:** Assessment of cancer cell radiosensitivity is essential for evaluating the effectiveness of radiotherapy. The clonogenic assay remains the gold standard for quantifying radiosensitivity by enumerating cells with replicative potential\textit{in vitro} following radiation exposure. However, colony counting is labor-intensive and subject to inter-observer variability. This study aimed to develop and evaluate an automated colony counting method for clonogenic assay images.
+
+**Methods:** We developed a classical computer vision-based pipeline for automated colony counting and evaluated it on 787 clonogenic assay images of the HCT116 colorectal cancer cell line. The method combines targeted preprocessing with an augmented marker-based watershed framework to segment and enumerate colonies. The pipeline was designed for settings with limited annotated data, variable imaging conditions, and the absence of microscopic-resolution images of individual cells, and produces interpretable segmentation masks that can serve as pseudo-annotations for downstream deep learning-based methods.
+
+**Results:** Quantitative evaluation across four assay morphology categories achieved an average precision of 0.961, recall of 0.779, and an overall F1 score of 0.856. Performance remained high for assays with sparse or moderately separated colonies (F1 scores up to 0.891) but decreased in densely clustered assays due to increased colony overlap. The proposed pipeline achieved higher overall precision and recall benchmarked against the Segment Anything Model, and produced fewer false detections arising from background artifacts.
+
+**Conclusions:** These results demonstrate that classical computer vision methods can provide a robust and interpretable solution for automated clonogenic assay analysis under data- and annotation-limited conditions. 
+
+## Keywords
+Computer vision, segmentation,  colony counting, clonogenic assay
 
 ## Authors
 
 Mona Wang (wanrong.wang@mail.mcgill.ca) <br />
-Supervisor: Dr. Laya Rafiee Sevyeri(laya.rafieesevyeri@mail.mcgill.ca) <br />
-PI: Dr. Shirin A. Enger (shirin.enger@mcgill.ca)
+Joanna Li <br />
+PI: Dr. Shirin A. Enger <br />
+Supervisor: Dr. Laya Rafiee Sevyeri
